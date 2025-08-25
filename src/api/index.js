@@ -1,12 +1,13 @@
 import axios from 'axios'
 import { BASE_URL } from './baseUrl'
 import { createDiscreteApi } from 'naive-ui'
+import router from '@/router'
 
 const { message } = createDiscreteApi(['message'])
 
 const service = axios.create({
   baseURL: BASE_URL,
-  timeout: 10000
+  timeout: 30000  // 增加到30秒，适应国外数据库延迟
 })
 
 service.interceptors.request.use(config => {
@@ -41,7 +42,8 @@ service.interceptors.response.use(
       message.error('登录已过期，请重新登录')
       localStorage.removeItem('token')
       setTimeout(() => {
-        window.location.href = '/login'
+        // 使用Vue Router导航，而不是window.location
+        router.push('/login')
       }, 800)
       return Promise.reject(error)
     }
@@ -57,5 +59,29 @@ service.interceptors.response.use(
     return Promise.reject(error)
   }
 )
+
+// Dashboard相关API
+export const dashboardApi = {
+  // 获取所有仪表盘数据（集合接口）- 设置更长超时时间
+  getAllData: (days = 7) => service.get('/admin/dashboard/all-data', { 
+    params: { days },
+    timeout: 60000  // dashboard接口设置60秒超时
+  }),
+  
+  // 保留原有接口，用于单独调用
+  getStats: () => service.get('/admin/dashboard/stats', { timeout: 30000 }),
+  getMonthlyStats: () => service.get('/admin/dashboard/monthly-stats', { timeout: 30000 }),
+  getSalesTrend: (days = 7) => service.get('/admin/dashboard/sales-trend', { 
+    params: { days },
+    timeout: 30000 
+  }),
+  getCategoryDistribution: () => service.get('/admin/dashboard/category-distribution', { timeout: 30000 }),
+  getUserGrowth: (days = 7) => service.get('/admin/dashboard/user-growth', { 
+    params: { days },
+    timeout: 30000 
+  }),
+  getTopProducts: () => service.get('/admin/dashboard/top-products', { timeout: 30000 }),
+  getRecentOrders: () => service.get('/admin/dashboard/recent-orders', { timeout: 30000 })
+}
 
 export default service 

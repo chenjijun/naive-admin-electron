@@ -1,0 +1,52 @@
+{
+  "appId": "com.hanlian.naive-admin",
+  "productName": "HanlianAdmin",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "public/**/*",
+    "node_modules/**/*"
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "portable",
+        "arch": ["x64"]
+      },
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "public/Hanlian.png"
+  },
+  "mac": {
+    "target": [
+      {
+        "target": "dmg",
+        "arch": ["x64", "arm64"]
+      }
+    ],
+    "icon": "public/Hanlian.png",
+    "category": "public.app-category.business"
+  },
+  "linux": {
+    "target": [
+      {
+        "target": "AppImage",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "public/Hanlian.png",
+    "category": "Office"
+  },
+  "publish": {
+    "provider": "github",
+    "releaseType": "release"
+  },
+  "buildDependenciesFromSource": false,
+  "npmRebuild": false
+}

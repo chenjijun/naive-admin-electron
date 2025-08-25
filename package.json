@@ -2,12 +2,25 @@
   "name": "naive-admin",
   "version": "1.0.0",
   "private": true,
+  "main": "electron/main.js",
+  "description": "瀚联管理系统桌面版",
+  "author": "瀚联科技",
+  "homepage": "./",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "serve": "vite preview"
+    "serve": "vite preview",
+    "electron": "electron .",
+    "electron:dev": "cross-env NODE_ENV=development electron .",
+    "electron:build": "npm run build && electron-builder",
+    "electron:build:win": "npm run build && electron-builder --win",
+    "electron:build:mac": "npm run build && electron-builder --mac",
+    "electron:build:linux": "npm run build && electron-builder --linux",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
   },
   "dependencies": {
+    "@vicons/ionicons5": "^0.13.0",
     "axios": "^1.6.0",
     "echarts": "^5.6.0",
     "jsbarcode": "^3.12.1",
@@ -19,6 +32,9 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^4.5.0",
+    "cross-env": "^7.0.3",
+    "electron": "^37.3.1",
+    "electron-builder": "^26.0.12",
     "vite": "^4.4.0"
   }
 }

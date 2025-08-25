@@ -225,7 +225,9 @@
 <script setup name="Dashboard">
 import { ref, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import api from '@/api'
+import api, { dashboardApi } from '@/api'
+import dashboardConfig from '@/config/dashboard'
+import { getDashboardDataWithFallback } from '@/utils/dashboardRetry'
 import * as echarts from 'echarts'
 import { useMessage, useLoadingBar, useDialog } from 'naive-ui'
 
@@ -270,18 +272,13 @@ const statusMap = {
 }
 
 // 时间范围选项
-const timeRangeOptions = [
-  { label: '近7天', value: 7 },
-  { label: '近30天', value: 30 },
-  { label: '近90天', value: 90 },
-  { label: '近1年', value: 365 }
-]
+const timeRangeOptions = dashboardConfig.timeRangeOptions
 
 // 当前选中的时间范围
-const selectedTimeRange = ref(7)
+const selectedTimeRange = ref(dashboardConfig.defaultTimeRange)
 
 // 当前选中的用户增长趋势时间范围
-const selectedUserTimeRange = ref(7)
+const selectedUserTimeRange = ref(dashboardConfig.defaultTimeRange)
 
 // 获取基础统计数据
 async function fetchStats() {
@@ -383,6 +380,93 @@ async function fetchLowStockProducts() {
     }
   } catch (error) {
     console.error('获取低库存商品失败:', error)
+  }
+}
+
+// 获取所有数据（智能重试和降级）
+async function fetchAllData() {
+  try {
+    const res = await getDashboardDataWithFallback(selectedTimeRange.value, {
+      enableRetry: dashboardConfig.refreshConfig.enableSmartRetry,
+      enableFallback: dashboardConfig.refreshConfig.enableFallback,
+      onProgress: (message) => {
+        if (dashboardConfig.errorHandling.showRetryMessage) {
+          console.log(message)
+        }
+      }
+    })
+    
+    if (res && res.message === 'ok') {
+      const data = res.data
+      
+      // 更新所有数据
+      stats.value = data.stats
+      monthlyStats.value = data.monthly_stats
+      salesTrend.value = data.sales_trend
+      userGrowth.value = data.user_growth
+      categoryDist.value = data.category_distribution
+      topProducts.value = data.top_products
+      recentOrders.value = data.recent_orders
+      lowStockList.value = data.low_stock_products || []
+      
+      // 重新渲染图表
+      nextTick(() => {
+        renderOrderSalesChart()
+        renderCategoryPieChart()
+        renderUserGrowthChart()
+      })
+      
+      // 显示数据来源信息
+      if (res.meta && res.meta.source === 'fallback') {
+        if (dashboardConfig.errorHandling.showRetryMessage) {
+          message.warning('使用降级接口获取数据成功')
+        }
+      }
+      
+      // 显示查询时间
+      if (res.meta && res.meta.query_time) {
+        console.log(`数据查询耗时: ${res.meta.query_time}秒`)
+      }
+    }
+  } catch (error) {
+    console.error('获取所有数据失败:', error)
+    
+    // 根据配置显示错误信息
+    if (dashboardConfig.errorHandling.showDetailedErrors) {
+      message.error(`获取数据失败: ${error.message}`)
+    } else {
+      message.error('获取数据失败，请稍后重试')
+    }
+    
+    // 如果配置允许，尝试使用原有接口作为最后的备用方案
+    if (dashboardConfig.keepLegacyApi && dashboardConfig.refreshConfig.enableFallback) {
+      console.log('尝试使用原有接口作为最后备用方案...')
+      try {
+        await fetchDataWithLegacyApi()
+        message.info('使用备用接口获取数据成功')
+      } catch (fallbackError) {
+        console.error('备用接口也失败:', fallbackError)
+      }
+    }
+  }
+}
+
+// 使用原有接口获取数据（备用方案）
+async function fetchDataWithLegacyApi() {
+  try {
+    await Promise.all([
+      fetchStats(),
+      fetchMonthlyStats(),
+      fetchSalesTrend(),
+      fetchCategoryDist(),
+      fetchUserGrowth(),
+      fetchTopProducts(),
+      fetchRecentOrders(),
+      fetchLowStockProducts()
+    ])
+    console.log('使用原有接口获取数据成功')
+  } catch (error) {
+    console.error('原有接口也失败:', error)
   }
 }
 
@@ -601,15 +685,19 @@ const loadingBar = useLoadingBar()
 const dialog = useDialog()
 
 function handleRefresh() {
-  dialog.warning({
-    title: '确认刷新',
-    content: '确定要刷新销售看板数据吗？',
-    positiveText: '刷新',
-    negativeText: '取消',
-    onPositiveClick: () => {
-      doRefresh()
-    }
-  })
+  if (dashboardConfig.refreshConfig.showRefreshConfirm) {
+    dialog.warning({
+      title: '确认刷新',
+      content: '确定要刷新销售看板数据吗？',
+      positiveText: '刷新',
+      negativeText: '取消',
+      onPositiveClick: () => {
+        doRefresh()
+      }
+    })
+  } else {
+    doRefresh()
+  }
 }
 
 function doRefresh() {
@@ -617,34 +705,44 @@ function doRefresh() {
   loadingBar.start()
   refreshing.value = true
   
-  Promise.all([
-    fetchStats(),
-    fetchMonthlyStats(),
-    fetchSalesTrend(),
-    fetchCategoryDist(),
-    fetchUserGrowth(),
-    fetchTopProducts(),
-    fetchRecentOrders(),
-    fetchLowStockProducts()
-  ]).then(() => {
-    message.success('刷新成功')
-    loadingBar.finish()
-    refreshing.value = false
-  }).catch(() => {
-    message.error('刷新失败')
-    loadingBar.error()
-    refreshing.value = false
-  })
+  // 根据配置选择API调用方式
+  if (dashboardConfig.useCombinedApi) {
+    fetchAllData().then(() => {
+      if (dashboardConfig.refreshConfig.showSuccessMessage) {
+        message.success('刷新成功')
+      }
+      loadingBar.finish()
+      refreshing.value = false
+    }).catch(() => {
+      message.error('刷新失败')
+      loadingBar.error()
+      refreshing.value = false
+    })
+  } else {
+    // 使用原有接口
+    fetchDataWithLegacyApi().then(() => {
+      if (dashboardConfig.refreshConfig.showSuccessMessage) {
+        message.success('刷新成功')
+      }
+      loadingBar.finish()
+      refreshing.value = false
+    }).catch(() => {
+      message.error('刷新失败')
+      loadingBar.error()
+      refreshing.value = false
+    })
+  }
 }
 
 // 时间范围切换处理
 async function handleTimeRangeChange() {
   try {
     loadingBar.start()
-    await fetchSalesTrend()
+    // 使用集合接口重新获取数据
+    await fetchAllData()
     loadingBar.finish()
   } catch (error) {
-    console.error('获取销售趋势失败:', error)
+    console.error('获取数据失败:', error)
     message.error('获取数据失败，请稍后重试')
     loadingBar.error()
   }
@@ -654,10 +752,11 @@ async function handleTimeRangeChange() {
 async function handleUserTimeRangeChange() {
   try {
     loadingBar.start()
-    await fetchUserGrowth()
+    // 使用集合接口重新获取数据
+    await fetchAllData()
     loadingBar.finish()
   } catch (error) {
-    console.error('获取用户增长趋势失败:', error)
+    console.error('获取数据失败:', error)
     message.error('获取数据失败，请稍后重试')
     loadingBar.error()
   }
@@ -672,14 +771,12 @@ function formatAmount(value) {
 }
 
 onMounted(() => {
-  fetchStats()
-  fetchMonthlyStats()
-  fetchSalesTrend()
-  fetchCategoryDist()
-  fetchUserGrowth()
-  fetchTopProducts()
-  fetchRecentOrders()
-  fetchLowStockProducts()
+  // 优先使用集合接口
+  fetchAllData().catch(error => {
+    console.error('Dashboard初始化失败:', error)
+    // 显示友好的错误提示
+    message.error('Dashboard加载失败，请检查网络连接或稍后重试')
+  })
 })
 </script>
 

@@ -106,7 +106,7 @@
 </template>
 <script setup name="Address">
 import { ref, onMounted, h, computed } from 'vue'
-import { NButton, useMessage, useDialog, useLoadingBar } from 'naive-ui'
+import { NButton, useMessage, useDialog, useLoadingBar, NDropdown } from 'naive-ui'
 import api from '@/api'
 import * as XLSX from 'xlsx'
 
@@ -157,10 +157,34 @@ const columns = computed(() => {
     { title: '是否默认', key: 'is_default', render: row => row.is_default ? '是' : '否' },
     { title: '创建时间', key: 'created_at', render: row => formatDate(row.created_at) },
     { title: '操作', key: 'action', render(row) {
-      return [
-        h(NButton, { size: 'small', onClick: () => openEdit(row) }, { default: () => '编辑' }),
-        h(NButton, { size: 'small', type: 'error', style: 'margin-left:8px', onClick: () => handleDelete(row) }, { default: () => '删除' })
+      const options = [
+        {
+          label: '编辑地址',
+          key: 'edit',
+          icon: () => h('i', { class: 'icon-edit' }),
+          disabled: false
+        },
+        {
+          label: '删除地址',
+          key: 'delete',
+          icon: () => h('i', { class: 'icon-delete' }),
+          disabled: false
+        }
       ]
+
+      return h(NDropdown, {
+        trigger: 'click',
+        options: options,
+        onSelect: (key) => handleActionSelect(key, row),
+        placement: 'bottom-end'
+      }, {
+        default: () => h(NButton, {
+          size: 'small',
+          type: 'primary',
+          secondary: true,
+          style: 'min-width: 60px;'
+        }, { default: () => '操作 ▼' })
+      })
     }}
   ];
   if (batchMode.value) {
@@ -243,6 +267,18 @@ function openEdit(row) {
   editId.value = row.id
   showEdit.value = true
   formEdit.value = { ...row }
+}
+
+// 处理操作下拉选项选择
+function handleActionSelect(key, row) {
+  switch (key) {
+    case 'edit':
+      openEdit(row)
+      break
+    case 'delete':
+      handleDelete(row)
+      break
+  }
 }
 function openAdd() {
   showAdd.value = true
@@ -342,5 +378,21 @@ onMounted(() => {
   box-shadow: 0 2px 8px rgba(24,144,255,0.08);
   
   min-height: 600px;
+}
+
+.icon-edit {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  background: #1890ff;
+  -webkit-mask: url('data:image/svg+xml;utf8,<svg fill=\"white\" viewBox=\"0 0 1024 1024\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M880 836H144c-17.7 0-32 14.3-32 32v36c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-36c0-17.7-14.3-32-32-32zm-622.3-84c2 0 4-.2 6-.5L431.9 722c2-.4 3.9-1.3 5.3-2.8l423.9-423.9c3.9-3.9 3.9-10.2 0-14.1L694.9 114.9c-1.9-1.9-4.4-2.9-7.1-2.9s-5.2 1-7.1 2.9L256.8 538.8c-1.5 1.5-2.4 3.3-2.8 5.3l-29.5 168.2c-1.9 11.1 1.5 21.9 9.4 29.8 6.6 6.4 14.9 9.9 23.8 9.9z\"></path></svg>') center/contain no-repeat;
+}
+
+.icon-delete {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  background: #ff4d4f;
+  -webkit-mask: url('data:image/svg+xml;utf8,<svg fill=\"white\" viewBox=\"0 0 1024 1024\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M360 184h-8c4.4 0 8-3.6 8-8v8h304v-8c0 4.4 3.6 8 8 8h8v8c0 4.4-3.6 8-8 8H360c-4.4 0-8-3.6-8-8v-8zm504 56H160c-17.7 0-32 14.3-32 32v32c0 4.4 3.6 8 8 8h60l12.3 123.4c1.6 16.2 15.6 28.6 31.8 28.6h451.8c16.2 0 30.2-12.4 31.8-28.6L892 304h60c4.4 0 8-3.6 8-8v-32c0-17.7-14.3-32-32-32zM731.3 840H292.7l-24.2-256h487l-24.2 256z\"></path></svg>') center/contain no-repeat;
 }
 </style> 

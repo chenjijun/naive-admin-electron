@@ -33,7 +33,12 @@
               <tr><td>金额</td><td>{{ formatAmount(detail.total_amount) }}</td></tr>
               <tr><td>状态</td><td>{{ statusMap[detail.status] || detail.status }}</td></tr>
               <tr><td>备注</td><td>{{ detail.remark }}</td></tr>
-              <tr><td>收货地址</td><td>{{ detail.shipping_address }}</td></tr>
+              <tr><td>收货地址</td><td>
+                <div v-if="detail.shipping_address" style="max-width: 300px; word-break: break-all;">
+                  {{ detail.shipping_address }}
+                </div>
+                <span v-else style="color: #888;">无地址信息</span>
+              </td></tr>
               <tr><td>联系电话</td><td>{{ detail.contact_phone }}</td></tr>
               <tr><td>创建时间</td><td>{{ formatDate(detail.created_at) }}</td></tr>
               <tr><td>更新时间</td><td>{{ formatDate(detail.updated_at) }}</td></tr>
@@ -75,7 +80,15 @@
               <n-select v-model:value="editForm.status" :options="statusOptions" />
             </n-form-item>
             <n-form-item label="收货地址">
-              <n-input v-model:value="editForm.shipping_address" />
+              <n-input 
+                v-model:value="editForm.shipping_address" 
+                type="textarea" 
+                :rows="3"
+                placeholder="请输入完整的收货地址（省市区详细地址）"
+              />
+              <div style="font-size: 12px; color: #888; margin-top: 4px;">
+                建议格式：省份+城市+区县+详细地址
+              </div>
             </n-form-item>
             <n-form-item label="联系电话">
               <n-input v-model:value="editForm.contact_phone" />
@@ -187,7 +200,15 @@
               <n-select v-model:value="addOrderForm.status" :options="statusOptions" />
             </n-form-item>
             <n-form-item label="收货地址">
-              <n-input v-model:value="addOrderForm.shipping_address" placeholder="请输入收货地址" />
+              <n-input 
+                v-model:value="addOrderForm.shipping_address" 
+                type="textarea" 
+                :rows="3"
+                placeholder="请输入完整的收货地址（省市区详细地址）"
+              />
+              <div style="font-size: 12px; color: #888; margin-top: 4px;">
+                建议格式：省份+城市+区县+详细地址
+              </div>
             </n-form-item>
             <n-form-item label="联系电话">
               <n-input v-model:value="addOrderForm.contact_phone" placeholder="请输入联系电话" />

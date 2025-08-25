@@ -44,7 +44,7 @@ async function onLogin() {
     const token = res.data?.data?.access_token
     if (token) {
       localStorage.setItem('token', token)
-      router.replace('/')
+      router.push('/dashboard')
     } else {
       message.error('登录失败')
     }

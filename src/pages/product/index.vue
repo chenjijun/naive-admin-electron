@@ -27,12 +27,16 @@
     </div>
     <!-- 右侧：商品管理 -->
     <div class="product-table-panel">
+     
+      
       <n-space style="margin: 6px;">
         <n-input v-model:value="searchText" placeholder="搜索商品名称" style="width: 220px" @keydown.enter="handleSearch" />
         <n-button type="primary" @click="handleSearch">搜索</n-button>
         <n-button @click="handleResetSearch">重置</n-button>
         <n-button type="primary" @click="showAddProduct = true">新增商品</n-button>
         <n-button @click="handleRefresh" type="info">刷新</n-button>
+        <n-button @click="downloadTemplate" type="info">下载模板</n-button>
+        <n-button @click="showImportHelp = true" type="warning">导入说明</n-button>
         <n-upload
           :custom-request="handleImport"
           accept=".xlsx"
@@ -108,6 +112,50 @@
         <n-space justify="end">
           <n-button @click="showAddCategory = false">取消</n-button>
           <n-button type="primary" @click="handleCategorySave">保存</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <!-- 导入说明弹窗 -->
+    <n-modal v-model:show="showImportHelp" preset="card" style="border-radius: 20px; width: 700px;">
+      <template #header>
+        <div class="add-title">商品导入说明</div>
+      </template>
+      <div class="import-help-content">
+        <h3>📋 Excel表头格式要求</h3>
+        <p>请严格按照以下顺序和名称填写表头（第一行）：</p>
+        <div class="header-list">
+          <div class="header-item">1. 商品名称</div>
+          <div class="header-item">2. 分类</div>
+          <div class="header-item">3. 价格</div>
+          <div class="header-item">4. 库存</div>
+          <div class="header-item">5. 起订量</div>
+          <div class="header-item">6. 销量</div>
+          <div class="header-item">7. 商品编号</div>
+          <div class="header-item">8. 创建时间</div>
+          <div class="header-item">9. 是否上架</div>
+          <div class="header-item">10. 单位</div>
+          <div class="header-item">11. 商品描述</div>
+        </div>
+        
+        <h3>⚠️ 注意事项</h3>
+        <ul>
+          <li>表头必须完全一致，包括中文字符和标点符号</li>
+          <li><strong>商品编号必须唯一，不能重复</strong> - 这是商品的唯一标识</li>
+          <li>价格、库存、起订量、销量必须是数字</li>
+          <li>是否上架填写：是/否</li>
+          <li>创建时间格式：YYYY-MM-DD</li>
+          <li>分类不存在时会自动创建</li>
+          <li>导出的Excel文件包含商品编码，可用于数据核对</li>
+        </ul>
+        
+        <h3>💡 建议</h3>
+        <p>请先点击"下载模板"按钮获取标准模板，然后按照模板格式填写数据。</p>
+      </div>
+      <template #action>
+        <n-space justify="end">
+          <n-button @click="showImportHelp = false">关闭</n-button>
+          <n-button type="primary" @click="downloadTemplate">下载模板</n-button>
         </n-space>
       </template>
     </n-modal>
@@ -252,6 +300,16 @@ const productDetail = ref({})
 const showBarcodeModal = ref(false)
 const barcodeImg = ref('')
 const barcodeSN = ref('')
+const showImportHelp = ref(false)
+const isLoadingProducts = ref(false) // 防止重复加载
+const imageLoadStates = ref(new Map()) // 记录图片加载状态
+
+// 备份状态
+const backupStatus = ref({
+  backup_needed: false,
+  reason: '',
+  days_since_last: null
+})
 
 const route = useRoute()
 const router = useRouter()
@@ -292,6 +350,10 @@ const columns = computed(() => {
             key: 'detail'
           },
           {
+            label: row.is_active ? '下架' : '上架',
+            key: 'toggle_status'
+          },
+          {
             label: '删除',
             key: 'delete'
           },
@@ -308,6 +370,9 @@ const columns = computed(() => {
             case 'detail':
               handleShowProductDetail(row)
               break
+            case 'toggle_status':
+              handleToggleProductStatus(row)
+              break
             case 'delete':
               handleDeleteProduct(row)
               break
@@ -321,7 +386,39 @@ const columns = computed(() => {
       })
     }}
   ];
-  base.unshift({ title: '图片', key: 'image', render: row => h('img', { src: row.image, style: 'width:48px;height:48px;object-fit:cover;' }) });
+  base.unshift({ title: '图片', key: 'image', render: row => {
+    // 创建图片组件的渲染函数
+    return h('div', { 
+      style: 'width:48px;height:48px;position:relative;'
+    }, [
+      // 图片元素
+      h('img', { 
+        src: row.image || '/Hanlian.png',
+        style: 'width:48px;height:48px;object-fit:cover;border-radius:4px;border:1px solid #eee;',
+        loading: 'lazy',
+        onError: (e) => {
+          // 防止无限循环：标记图片已加载失败
+          e.target.dataset.loaded = 'error'
+          // 隐藏图片
+          e.target.style.display = 'none'
+          // 显示占位符
+          const placeholder = e.target.nextSibling
+          if (placeholder) {
+            placeholder.style.display = 'flex'
+          }
+        },
+        onLoad: (e) => {
+          // 标记图片加载成功
+          e.target.dataset.loaded = 'success'
+        }
+      }),
+      // 占位符元素（默认隐藏）
+      h('div', {
+        style: 'width:48px;height:48px;background:#f8f9fa;border:1px solid #e9ecef;border-radius:4px;display:none;align-items:center;justify-content:center;color:#6c757d;font-size:11px;position:absolute;top:0;left:0;',
+        textContent: '无图'
+      })
+    ])
+  }});
   if (batchMode.value) {
     base.unshift({ type: 'selection', key: 'selection', width: 40 });
   }
@@ -406,15 +503,26 @@ async function fetchCategories() {
   }
 }
 async function fetchProducts() {
+  if (isLoadingProducts.value) return // 防止重复加载
+  
+  isLoadingProducts.value = true
   loadingBar.start()
-  const params = { page: page.value, page_size: pageSize.value }
-  if (searchText.value) params.search = searchText.value
-  const res = await api.get('/admin/products', { params })
-  if (res && res.message === 'ok') {
-    products.value = res.data.items
-    total.value = res.data.total
+  
+  try {
+    const params = { page: page.value, page_size: pageSize.value }
+    if (searchText.value) params.search = searchText.value
+    const res = await api.get('/admin/products', { params })
+    if (res && res.message === 'ok') {
+      products.value = res.data.items
+      total.value = res.data.total
+    }
+  } catch (error) {
+    console.error('获取商品列表失败:', error)
+    message.error('获取商品列表失败')
+  } finally {
+    loadingBar.finish()
+    isLoadingProducts.value = false
   }
-  loadingBar.finish()
 }
 function onCategorySelect(keys) {
   if (!keys.length) return; // 防止二次点击清空
@@ -426,15 +534,26 @@ function onCategorySelect(keys) {
   fetchProductsByCategory(catId)
 }
 async function fetchProductsByCategory(catId) {
+  if (isLoadingProducts.value) return // 防止重复加载
+  
+  isLoadingProducts.value = true
   loadingBar.start()
-  const params = { category_id: catId, page: page.value, page_size: pageSize.value }
-  if (searchText.value) params.search = searchText.value
-  const res = await api.get('/admin/products', { params })
-  if (res && res.message === 'ok') {
-    products.value = res.data.items
-    total.value = res.data.total
+  
+  try {
+    const params = { category_id: catId, page: page.value, page_size: pageSize.value }
+    if (searchText.value) params.search = searchText.value
+    const res = await api.get('/admin/products/', { params })
+    if (res && res.message === 'ok') {
+      products.value = res.data.items
+      total.value = res.data.total
+    }
+  } catch (error) {
+    console.error('获取分类商品失败:', error)
+    message.error('获取分类商品失败')
+  } finally {
+    loadingBar.finish()
+    isLoadingProducts.value = false
   }
-  loadingBar.finish()
 }
 function handleSearch() {
   page.value = 1
@@ -476,28 +595,88 @@ async function openEditProduct(row) {
   showAddProduct.value = true
 }
 function handleDeleteProduct(row) {
-  dialog.warning({
-    title: '确认删除',
-    content: `确定要删除商品“${row.name}”吗？`,
-    positiveText: '删除',
-    negativeText: '取消',
-    onPositiveClick: () => {
-      loadingBar.start()
-      api.delete(`/admin/products/${row.id}`).then(res => {
-        if (res && res.message === 'ok') {
-          message.success(`商品【${row.name}】删除成功`)
-          if (selectedCategoryId.value) {
-            fetchProductsByCategory(selectedCategoryId.value)
-          } else {
-            fetchProducts()
+  // 先检查商品使用情况
+  loadingBar.start()
+  api.get(`/admin/products/${row.id}/usage-check`).then(res => {
+    loadingBar.finish()
+    if (res && res.message === 'ok') {
+      const usageData = res.data
+      
+      if (usageData.can_delete) {
+        // 可以安全删除
+        dialog.warning({
+          title: '确认删除',
+          content: `确定要删除商品"${row.name}"吗？\n\n该商品目前未被使用，可以安全删除。`,
+          positiveText: '删除',
+          negativeText: '取消',
+          onPositiveClick: () => {
+            performDeleteProduct(row)
           }
-          loadingBar.finish()
-        } else {
-          message.error('删除失败')
-          loadingBar.error()
-        }
-      }).catch(() => loadingBar.error())
+        })
+      } else {
+        // 不能删除，建议下架
+        const orderText = usageData.order_count > 0 ? `\n• 在 ${usageData.order_count} 个订单中使用` : ''
+        const cartText = usageData.cart_count > 0 ? `\n• 在 ${usageData.cart_count} 个购物车中` : ''
+        const userText = usageData.total_users > 0 ? `\n• 涉及 ${usageData.total_users} 个用户` : ''
+        
+        dialog.error({
+          title: '商品无法删除',
+          content: `商品"${row.name}"目前正在被使用，无法删除：${orderText}${cartText}${userText}\n\n建议：\n• 将商品下架而不是删除\n• 处理完相关订单后再考虑删除\n• 联系相关用户清理购物车`,
+          positiveText: '下架商品',
+          negativeText: '取消',
+          onPositiveClick: () => {
+            // 执行下架操作
+            handleDeactivateProduct(row)
+          }
+        })
+      }
+    } else {
+      message.error('检查商品使用情况失败')
     }
+  }).catch(err => {
+    loadingBar.error()
+    message.error('检查商品使用情况失败：' + (err.message || '网络错误'))
+  })
+}
+
+// 执行删除商品操作
+function performDeleteProduct(row) {
+  loadingBar.start()
+  api.delete(`/admin/products/${row.id}`).then(res => {
+    if (res && res.message === 'ok') {
+      message.success(`商品【${row.name}】删除成功`)
+      if (selectedCategoryId.value) {
+        fetchProductsByCategory(selectedCategoryId.value)
+      } else {
+        fetchProducts()
+      }
+      loadingBar.finish()
+    } else {
+      message.error('删除失败')
+      loadingBar.error()
+    }
+  }).catch(() => loadingBar.error())
+}
+
+// 下架商品
+function handleDeactivateProduct(row) {
+  loadingBar.start()
+  api.post(`/admin/products/${row.id}/deactivate`).then(res => {
+    if (res && res.message === 'ok') {
+      message.success(`商品【${row.name}】已下架`)
+      if (selectedCategoryId.value) {
+        fetchProductsByCategory(selectedCategoryId.value)
+      } else {
+        fetchProducts()
+      }
+      loadingBar.finish()
+    } else {
+      message.error('下架失败：' + (res.message || '未知错误'))
+      loadingBar.error()
+    }
+  }).catch(err => {
+    loadingBar.error()
+    message.error('下架失败：' + (err.message || '网络错误'))
   })
 }
 function handleProductSave() {
@@ -555,6 +734,114 @@ function handleImageUpload({ file, onFinish }) {
     }
   })
 }
+// 下载导入模板
+function downloadTemplate() {
+  try {
+    console.log('开始生成模板...')
+    console.log('XLSX对象:', XLSX)
+    
+    // 检查XLSX是否可用
+    if (!XLSX || !XLSX.utils || !XLSX.utils.aoa_to_sheet) {
+      throw new Error('XLSX库未正确加载')
+    }
+    
+    // 直接在前端生成模板，不依赖后端API
+    const headers = [
+      "商品名称", "分类", "价格", "库存", "起订量", "销量", 
+      "商品编号", "创建时间", "是否上架", "单位", "商品描述"
+    ]
+    
+    const exampleData = [
+      "示例商品", "示例分类", 99.99, 100, 1, 0, 
+      "SP001", "2024-01-01", "是", "个", "这是一个示例商品描述"
+    ]
+    
+    console.log('表头:', headers)
+    console.log('示例数据:', exampleData)
+    
+    // 创建模板数据
+    const templateRows = [
+      headers, // 表头
+      exampleData // 示例数据
+    ]
+    
+    console.log('模板行数据:', templateRows)
+    
+    // 创建工作表
+    const ws = XLSX.utils.aoa_to_sheet(templateRows)
+    console.log('工作表创建成功:', ws)
+    
+    const wb = XLSX.utils.book_new()
+    console.log('工作簿创建成功:', wb)
+    
+    XLSX.utils.book_append_sheet(wb, ws, '商品导入模板')
+    console.log('工作表添加成功')
+    
+    // 设置列宽
+    const colWidths = [15, 12, 10, 10, 10, 10, 15, 15, 10, 8, 30]
+    ws['!cols'] = colWidths.map(width => ({ width }))
+    console.log('列宽设置成功')
+    
+    console.log('准备下载文件...')
+    
+    // 尝试多种下载方法
+    try {
+      // 方法1: 直接使用XLSX.writeFile
+      XLSX.writeFile(wb, '商品导入模板.xlsx')
+      console.log('方法1成功: XLSX.writeFile')
+      message.success('模板下载成功')
+      return
+    } catch (method1Error) {
+      console.warn('方法1失败:', method1Error)
+    }
+    
+    try {
+      // 方法2: 使用Blob和URL.createObjectURL
+      const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+      const blob = new Blob([wbout], { type: 'application/octet-stream' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = '商品导入模板.xlsx'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      console.log('方法2成功: Blob下载')
+      message.success('模板下载成功')
+      return
+    } catch (method2Error) {
+      console.warn('方法2失败:', method2Error)
+    }
+    
+    // 如果Excel方法都失败，使用CSV备用方案
+    throw new Error('Excel下载方法失败，使用CSV备用方案')
+    
+  } catch (error) {
+    console.error('生成模板失败:', error)
+    
+    // 使用CSV备用方法
+    try {
+      console.log('使用CSV备用下载方法...')
+      const csvContent = "商品名称,分类,价格,库存,起订量,销量,商品编号,创建时间,是否上架,单位,商品描述\n示例商品,示例分类,99.99,100,1,0,SP001,2024-01-01,是,个,这是一个示例商品描述"
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+      const link = document.createElement('a')
+      const url = URL.createObjectURL(blob)
+      link.setAttribute('href', url)
+      link.setAttribute('download', '商品导入模板.csv')
+      link.style.visibility = 'hidden'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      message.success('CSV模板下载成功（Excel下载失败，使用备用方案）')
+    } catch (backupError) {
+      console.error('所有下载方法都失败:', backupError)
+      message.error('下载失败，请检查浏览器设置或联系管理员')
+    }
+  }
+}
+
 // 仅支持xlsx文件导入
 function handleImport({ file, onFinish }) {
   loadingBar.start()
@@ -579,7 +866,16 @@ function handleImport({ file, onFinish }) {
       message.error('导入失败')
       loadingBar.error()
     }
-  }).catch(() => loadingBar.error())
+  }).catch((error) => {
+    console.error('导入错误:', error)
+    // 显示详细的错误信息
+    if (error.response && error.response.data && error.response.data.detail) {
+      message.error(`导入失败: ${error.response.data.detail}`)
+    } else {
+      message.error('导入失败，请检查文件格式')
+    }
+    loadingBar.error()
+  })
 }
 function handleExport() {
   dialog.info({
@@ -610,6 +906,7 @@ function exportToExcel(data) {
   // 1. 构造导出数据，分类字段转为名称
   const exportData = data.map(item => ({
     商品名称: item.name,
+    商品编码: item.sn, // 添加商品编码
     分类: getCategoryName(item.category_id),
     价格: item.price,
     库存: item.stock,
@@ -678,30 +975,119 @@ function toggleBatchMode() {
 }
 function handleBatchDelete() {
   if (!selectedRows.value.length) return
-  dialog.warning({
-    title: '批量删除',
-    content: `确定要删除选中的${selectedRows.value.length}个商品吗？`,
-    positiveText: '删除',
-    negativeText: '取消',
-    onPositiveClick: () => {
-      loadingBar.start()
-      api.post('/admin/products/batch-delete', { ids: selectedRows.value }).then(res => {
-        if (res && res.message === 'ok') {
-          message.success(`已删除${selectedRows.value.length}个商品`)
-          batchMode.value = false
-          selectedRows.value = []
-          if (selectedCategoryId.value) {
-            fetchProductsByCategory(selectedCategoryId.value)
-          } else {
-            fetchProducts()
-          }
-          loadingBar.finish()
+  
+  // 先检查所有选中商品的使用情况
+  loadingBar.start()
+  const checkPromises = selectedRows.value.map(id => 
+    api.get(`/admin/products/${id}/usage-check`)
+  )
+  
+  Promise.all(checkPromises).then(responses => {
+    loadingBar.finish()
+    
+    const canDeleteIds = []
+    const cannotDeleteProducts = []
+    
+    responses.forEach((res, index) => {
+      const productId = selectedRows.value[index]
+      if (res && res.message === 'ok') {
+        if (res.data.can_delete) {
+          canDeleteIds.push(productId)
         } else {
-          message.error('批量删除失败'+res.message)
-          loadingBar.error()
+          cannotDeleteProducts.push({
+            id: productId,
+            name: res.data.product_name,
+            order_count: res.data.order_count,
+            cart_count: res.data.cart_count
+          })
         }
-      }).catch(() => loadingBar.error())
+      }
+    })
+    
+    if (cannotDeleteProducts.length > 0) {
+      // 有商品无法删除
+      let content = `以下商品无法删除：\n\n`
+      cannotDeleteProducts.forEach(product => {
+        content += `• ${product.name}：`
+        if (product.order_count > 0) content += `在 ${product.order_count} 个订单中使用，`
+        if (product.cart_count > 0) content += `在 ${product.cart_count} 个购物车中，`
+        content += `建议下架\n`
+      })
+      content += `\n建议：\n• 将无法删除的商品下架\n• 处理完相关订单后再考虑删除\n• 联系相关用户清理购物车`
+      
+      dialog.error({
+        title: '部分商品无法删除',
+        content: content,
+        positiveText: '下架无法删除的商品',
+        negativeText: '取消',
+        onPositiveClick: () => {
+          // 下架无法删除的商品
+          handleBatchDeactivateForUnsafe(cannotDeleteProducts.map(p => p.id))
+        }
+      })
     }
+    
+    if (canDeleteIds.length > 0) {
+      // 可以删除的商品
+      dialog.warning({
+        title: '确认删除',
+        content: `确定要删除选中的 ${canDeleteIds.length} 个商品吗？\n\n这些商品目前未被使用，可以安全删除。`,
+        positiveText: '删除',
+        negativeText: '取消',
+        onPositiveClick: () => {
+          performBatchDelete(canDeleteIds)
+        }
+      })
+    }
+    
+  }).catch(err => {
+    loadingBar.error()
+    message.error('检查商品使用情况失败：' + (err.message || '网络错误'))
+  })
+}
+
+// 执行批量删除操作
+function performBatchDelete(productIds) {
+  loadingBar.start()
+  api.post('/admin/products/batch-delete', { ids: productIds }).then(res => {
+    if (res && res.message === 'ok') {
+      message.success(`已删除 ${productIds.length} 个商品`)
+      batchMode.value = false
+      selectedRows.value = []
+      if (selectedCategoryId.value) {
+        fetchProductsByCategory(selectedCategoryId.value)
+      } else {
+        fetchProducts()
+      }
+      loadingBar.finish()
+    } else {
+      message.error('批量删除失败：' + res.message)
+      loadingBar.error()
+    }
+  }).catch(() => loadingBar.error())
+}
+
+// 下架无法删除的商品
+function handleBatchDeactivateForUnsafe(productIds) {
+  loadingBar.start()
+  api.post('/admin/products/batch-deactivate', { ids: productIds }).then(res => {
+    if (res && res.message === 'ok') {
+      message.success(`已下架 ${productIds.length} 个无法删除的商品`)
+      batchMode.value = false
+      selectedRows.value = []
+      if (selectedCategoryId.value) {
+        fetchProductsByCategory(selectedCategoryId.value)
+      } else {
+        fetchProducts()
+      }
+      loadingBar.finish()
+    } else {
+      message.error('批量下架失败：' + (res.message || '未知错误'))
+      loadingBar.error()
+    }
+  }).catch(err => {
+    loadingBar.error()
+    message.error('批量下架失败：' + (err.message || '网络错误'))
   })
 }
 
@@ -825,6 +1211,33 @@ function handleBarcode(row) {
   })
 }
 
+function handleToggleProductStatus(row) {
+  dialog.warning({
+    title: `切换商品状态`,
+    content: `确定要将商品“${row.name}”从${row.is_active ? '下架' : '上架'}吗？`,
+    positiveText: '切换',
+    negativeText: '取消',
+    onPositiveClick: () => {
+      loadingBar.start()
+      const action = row.is_active ? 'deactivate' : 'activate'
+      api.post(`/admin/products/${row.id}/${action}`).then(res => {
+        if (res && res.message === 'ok') {
+          message.success(`商品【${row.name}】已${action === 'deactivate' ? '下架' : '上架'}`)
+          if (selectedCategoryId.value) {
+            fetchProductsByCategory(selectedCategoryId.value)
+          } else {
+            fetchProducts()
+          }
+          loadingBar.finish()
+        } else {
+          message.error(`切换状态失败：${res.message}`)
+          loadingBar.error()
+        }
+      }).catch(() => loadingBar.error())
+    }
+  })
+}
+
 function handleDeleteCategory() {
   if (!selectedCategoryId.value) {
     message.warning('请先选择要删除的分类')
@@ -874,8 +1287,11 @@ const handleImportImages = async ({ file }) => {
   }
 }
 
+
+
 onMounted(() => {
   fetchCategories()
+  
   // 路由带id时自动弹出详情
   if (route.query.id) {
     const id = Number(route.query.id)
@@ -918,5 +1334,49 @@ onMounted(() => {
 }
 .add-form {
   padding: 8px 0 0 0;
+}
+
+.import-help-content {
+  padding: 16px 0;
+}
+
+.import-help-content h3 {
+  color: #42a5f5;
+  margin: 20px 0 12px 0;
+  font-size: 16px;
+}
+
+.import-help-content p {
+  margin: 8px 0;
+  color: #666;
+  line-height: 1.6;
+}
+
+.header-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.header-item {
+  background: #f0f9ff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid #bae6fd;
+  font-size: 14px;
+  color: #0369a1;
+  text-align: center;
+}
+
+.import-help-content ul {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.import-help-content li {
+  margin: 6px 0;
+  color: #666;
+  line-height: 1.5;
 }
 </style>

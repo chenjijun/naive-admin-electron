@@ -4,9 +4,19 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [vue()],
+  base: './', // 使用相对路径，适合Electron打包
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src')
+    }
+  },
+  build: {
+    outDir: 'dist',
+    assetsDir: 'assets',
+    rollupOptions: {
+      output: {
+        manualChunks: undefined
+      }
     }
   },
   server: {
