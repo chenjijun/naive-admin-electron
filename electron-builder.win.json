@@ -1,0 +1,42 @@
+{
+  "appId": "com.hanlian.naive-admin",
+  "productName": "瀚联管理系统",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "public/**/*",
+    "node_modules/**/*"
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "portable",
+        "arch": ["x64"]
+      },
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "public/Hanlian.png",
+    "requestedExecutionLevel": "asInvoker"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "瀚联管理系统",
+    "installerIcon": "public/Hanlian.png",
+    "uninstallerIcon": "public/Hanlian.png",
+    "installerHeaderIcon": "public/Hanlian.png"
+  },
+  "portable": {
+    "artifactName": "瀚联管理系统.exe"
+  },
+  "buildDependenciesFromSource": false,
+  "npmRebuild": false
+}
