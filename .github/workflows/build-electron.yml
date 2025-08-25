@@ -1,85 +1,158 @@
-name: Build Electron App
+# name: Build Electron App
+
+# on:
+#   push:
+#     tags:
+#       - 'v*'
+#   pull_request:
+#     branches: [ main, master ]
+#   workflow_dispatch:
+
+# jobs:
+#   build:
+#     runs-on: ${{ matrix.os }}
+    
+#     strategy:
+#       matrix:
+#         os: [ubuntu-latest, windows-latest, macos-latest]
+#         node-version: [20]
+
+#     steps:
+#     - name: Checkout code
+#       uses: actions/checkout@v4
+
+#     - name: Setup Node.js ${{ matrix.node-version }}
+#       uses: actions/setup-node@v4
+#       with:
+#         node-version: ${{ matrix.node-version }}
+#         cache: 'npm'
+
+#     - name: Install dependencies
+#       run: npm ci
+
+#     - name: Build Vue app
+#       run: npm run build
+
+#     - name: Build Electron app
+#       env:
+#         ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
+#         ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+#         ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
+#       run: |
+#         if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+#           npm run electron:build:linux
+#         elif [ "${{ matrix.os }}" = "windows-latest" ]; then
+#           npm run electron:build:win
+#         elif [ "${{ matrix.os }}" = "macos-latest" ]; then
+#           npm run electron:build:mac
+#         fi
+
+#     - name: Upload build artifacts
+#       uses: actions/upload-artifact@v4
+#       with:
+#         name: electron-build-${{ matrix.os }}-${{ matrix.node-version }}
+#         path: |
+#           release/
+#           dist/
+#         retention-days: 30
+
+#   release:
+#     needs: build
+#     runs-on: ubuntu-latest
+#     if: startsWith(github.ref, 'refs/tags/')
+    
+#     steps:
+#     - name: Checkout code
+#       uses: actions/checkout@v4
+
+#     - name: Download all artifacts
+#       uses: actions/download-artifact@v4
+#       with:
+#         path: artifacts
+
+#     - name: Create Release
+#       uses: softprops/action-gh-release@v1
+#       with:
+#         files: |
+#           artifacts/*/release/*.exe
+#           artifacts/*/release/*.dmg
+#           artifacts/*/release/*.AppImage
+#           artifacts/*/release/*.zip
+#         draft: false
+#         prerelease: false
+#         generate_release_notes: true
+#       env:
+#         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+name: Build Windows EXE
 
 on:
   push:
     tags:
-      - 'v*'
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:
+      - 'v*'          # 推送标签如 v1.0.0 时打包
+  workflow_dispatch: # 手动触发
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        node-version: [20]
+  build-windows:
+    runs-on: windows-2022
+    timeout-minutes: 30
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Setup Node.js ${{ matrix.node-version }}
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          node_modules
+          ~/.cache/electron
+          ~/.cache/electron-builder
+        key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+
+    - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: ${{ matrix.node-version }}
+        node-version: 20
         cache: 'npm'
 
     - name: Install dependencies
       run: npm ci
 
-    - name: Build Vue app
+    - name: Build Vue frontend
       run: npm run build
 
-    - name: Build Electron app
+    - name: Build Electron Windows Portable
       env:
+        # 国内镜像加速
         ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
-        ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
-        ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
+        ELECTRON_BUILDER_BINARIES_MIRROR: https://npmmirror.com/mirrors/electron-builder-binaries/
       run: |
-        if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-          npm run electron:build:linux
-        elif [ "${{ matrix.os }}" = "windows-latest" ]; then
-          npm run electron:build:win
-        elif [ "${{ matrix.os }}" = "macos-latest" ]; then
-          npm run electron:build:mac
-        fi
+        npm run electron:build:win
 
-    - name: Upload build artifacts
+    - name: Upload Windows Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: electron-build-${{ matrix.os }}-${{ matrix.node-version }}
-        path: |
-          release/
-          dist/
+        name: HanlianAdmin-Windows-Portable
+        path: release/
         retention-days: 30
 
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: artifacts
-
-    - name: Create Release
+    - name: Create GitHub Release
+      if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
+        name: Release ${{ github.ref_name }}
+        tag_name: ${{ github.ref_name }}
+        body: |
+          ## Windows 便携版已发布
+          - 文件: `HanlianAdmin-*.exe`
+          - 平台: Windows x64
+          - 类型: Portable (免安装)
         files: |
-          artifacts/*/release/*.exe
-          artifacts/*/release/*.dmg
-          artifacts/*/release/*.AppImage
-          artifacts/*/release/*.zip
+          release/*.exe
+          release/*.zip
         draft: false
         prerelease: false
-        generate_release_notes: true
+        generate_release_notes: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
